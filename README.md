@@ -14,6 +14,6 @@
     
  # Tecnologias utilizadas no projeto:
  - .NetCore 3.1
- - MySql
+ - MySql 8
  - HTML e CSS
  - jQuery
