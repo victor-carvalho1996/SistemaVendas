@@ -1,0 +1,197 @@
+﻿@model VendasSolutto.Models.EntradaRelatorio
+@{
+    ViewData["Title"] = "Vendas Solutto";
+}
+
+<html>
+<body onload="fillDate">
+    <script src="~/lib/AnyChart/dist/js/anychart-base.min.js" type="text/javascript"></script>
+    <script src="~/lib/moment/moment.min.js" type="text/javascript"></script>
+    <script src="~/lib/SweetAlert/dist/sweetalert.min.js" type="text/javascript"></script>
+    <link type="text/css" rel="stylesheet" href="../css/site.css" />
+    <h1 class="display-4 text-center">Relatórios</h1>
+    <br />
+    <div class="text-center">
+        <form class="form-inline" style="padding-left: 25%">
+            <label class="mr-sm-2" for="startDate">Data Inicial: </label>
+            <input type="date" class="form-control mb-2 mr-sm-2" required id="startDate">
+
+            <label class="mr-sm-2" for="finalDate">Data Final: </label>
+            <input type="date" class="form-control mb-2 mr-sm-2" required id="finalDate">
+
+            <button type="button" onclick="runReports()" style="width: 100px" class="btn btn-primary mb-2">Ok</button>
+
+            <div id="divLoading" style="display: inline-flex; padding-left: 10px;" hidden>
+                <div>Carregando</div>
+                <div class="sk-chase">
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                </div>
+            </div>
+        </form>
+        
+    </div>
+    <div id="container" style="display: flex">
+        <div id="bar" style="width: 500px; height: 400px;">
+
+        </div>
+        <div id="pie" style="width: 500px; height: 400px;">
+
+        </div>
+    </div>
+
+    <script>
+        window.onload = function fillDate() {
+            var finalDate = moment().format('yyyy-MM-DD');
+            $("#finalDate").val(finalDate);
+
+            var startDate = moment().add(-15, 'days').format('yyyy-MM-DD');
+            $("#startDate").val(startDate);
+        }
+
+        function showLoading(show) {
+            if (show) {
+                $("#divLoading").removeAttr('hidden');
+            } else {
+                $("#divLoading").attr('hidden', true);
+            }
+        }
+
+        async function runReports() {
+
+            let dateF = $("#finalDate").val();
+            let dateI = $("#startDate").val();
+
+            let isValidPeriod = validPeriod(dateI, dateF);
+
+            if (!isValidPeriod) {
+                return 0;
+            }
+
+            dateF = dateF.replaceAll("-", "/");
+            dateI = dateI.replaceAll("-", "/");
+            var resultGraphBar = undefined;
+            var resultPieChart = undefined;
+            var haveData = true;
+
+            showLoading(true);
+
+            await $.ajax({
+                type: "POST",
+                url: "/Relatorios/RelatorioBarra",
+                data: { dataInicial: dateI, dataFinal: dateF },
+                dataType: "text",
+                success: function (result) {
+                    resultGraphBar = JSON.parse(result);
+                    if (resultGraphBar.length === 0) {
+                        swal("Alerta!", "Não foi encontrado vendas nesse intervalo de datas!", "warning");
+                        haveData = false;
+                    }
+                },
+                error: function (e) {
+                    swal("Alerta!", e.message, "error");
+                }
+            });
+
+            if (!haveData) {
+                showLoading(false);
+                return 0;
+            }
+
+            await $.ajax({
+                type: "POST",
+                url: "/Relatorios/RelatorioPizza",
+                data: { dataInicial: dateI, dataFinal: dateF },
+                dataType: "text",
+                success: function (result) {
+                    resultPieChart = JSON.parse(result);
+                    if (resultPieChart.length === 0) {
+                        swal("Alerta!", "Não foi encontrado vendas nesse intervalo de datas!", "warning");
+                        haveData = false;
+                    }
+                },
+                error: function (e) {
+                    swal("Alerta!", e.message, "error");
+                }
+            });
+
+            if (!haveData) {
+                showLoading(false);
+                return 0;
+            }
+
+            showBarGraph(resultGraphBar);
+            showPieChart(resultPieChart);
+
+            showLoading(false);
+
+
+        }
+
+        function validPeriod(dateI, dateF) {
+            if (moment(dateI) > moment(dateF)) {
+                swal("Alerta!", "Data Inicial não pode ser maior que a data final.", "warning");
+                return false;
+            }
+
+            if (dateI === "" || dateF === "") {
+                swal("Alerta!", "Favor selecionar um período de máximo 15 dias.", "warning");
+                return false;
+            }
+
+            let finalDate = moment(dateF);
+            if (finalDate.diff(dateI, "days") > 15) {
+                swal("Alerta!", "Favor selecionar um período menor ou igual a 15 dias.", "warning");
+                return false;
+            }
+            return true;
+        }
+
+        function showBarGraph(result) {
+            $('#bar').empty()
+
+            let rawData = [];
+            for (let i = 0; i < result.length; i++) {
+                rawData.push([moment(result[i].data).format("DD-MM"), (result[i].total_dia).toFixed(2)])
+            }
+
+            anychart.onDocumentReady(function () {
+                anychart.format.locales.default.numberLocale.decimalsCount = 2
+                var chart = anychart.bar(rawData);
+
+                var tooltip = chart.tooltip();
+
+                tooltip.format("Total de vendas: R$ {%value}{decimalsCount:2,zeroFillDecimals:true}")
+
+
+                chart.title('Total de vendas por dia');
+                chart.container('bar');
+                chart.draw();
+            });
+        }
+
+        function showPieChart(result) {
+            $('#pie').empty()
+
+            let rawData = [];
+            for (let i = 0; i < result.length; i++) {
+                rawData.push([result[i].produto_nome, (result[i].valor_vendido).toFixed(2)])
+            }
+
+            anychart.onDocumentReady(function () {
+                anychart.format.locales.default.numberLocale.decimalsCount = 2
+                var chart = anychart.pie(rawData);
+             
+                chart.title("Total vendido de cada produto");
+                chart.labels().format('R$ {%value}{decimalsCount:2,zeroFillDecimals:true}');
+                chart.container("pie");
+                chart.draw();
+            });
+        }
+    </script>
+</body>
+</html>
